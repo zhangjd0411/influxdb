@@ -2387,8 +2387,3 @@ func BenchmarkParseTags(b *testing.B) {
 		models.ParseTags(tags)
 	}
 }
-
-func init() {
-	// Force uint support to be enabled for testing.
-	models.EnableUintSupport()
-}
