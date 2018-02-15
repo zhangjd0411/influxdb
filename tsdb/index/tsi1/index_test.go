@@ -409,5 +409,9 @@ func (idx *Index) CreateSeriesSliceIfNotExists(a []Series) error {
 		names = append(names, s.Name)
 		tags = append(tags, s.Tags)
 	}
-	return idx.CreateSeriesListIfNotExists(keys, names, tags)
+	if err := idx.CreateSeriesListIfNotExists(keys, names, tags); err != nil {
+		return err
+	}
+	idx.WaitPendingWrites()
+	return nil
 }

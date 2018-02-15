@@ -290,6 +290,17 @@ func (i *Index) availableThreads() int {
 	return n
 }
 
+// WaitPendingWrites returns after all pending writes have completed.
+func (i *Index) WaitPendingWrites() {
+	fs, err := i.RetainFileSet()
+	if err != nil {
+		i.logger.Warn("Index is closing down")
+		return
+	}
+	defer fs.Release()
+	fs.WaitPendingWrites()
+}
+
 // SetFieldSet sets a shared field set from the engine.
 func (i *Index) SetFieldSet(fs *tsdb.MeasurementFieldSet) {
 	for _, p := range i.partitions {

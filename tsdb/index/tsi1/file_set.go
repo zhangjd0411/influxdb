@@ -56,6 +56,15 @@ func (fs *FileSet) Release() {
 	}
 }
 
+// WaitPendingWrites returns after all pending writes have been completed.
+func (fs FileSet) WaitPendingWrites() {
+	for _, f := range fs.files {
+		if f, ok := f.(*LogFile); ok {
+			f.WaitPendingWrites()
+		}
+	}
+}
+
 // SeriesFile returns the attached series file.
 func (fs *FileSet) SeriesFile() *tsdb.SeriesFile { return fs.sfile }
 

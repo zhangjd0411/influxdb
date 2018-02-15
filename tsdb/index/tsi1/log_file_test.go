@@ -40,6 +40,7 @@ func TestLogFile_AddSeriesList(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	f.WaitPendingWrites()
 
 	// Verify data.
 	itr := f.MeasurementIterator()
@@ -92,6 +93,7 @@ func TestLogFile_SeriesStoredInOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	f.WaitPendingWrites()
 
 	// Sort the tag values so we know what order to expect.
 	tvs := make([]string, 0, len(tvm))
@@ -144,6 +146,7 @@ func TestLogFile_DeleteMeasurement(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	f.WaitPendingWrites()
 
 	// Remove measurement.
 	if err := f.DeleteMeasurement([]byte("cpu")); err != nil {

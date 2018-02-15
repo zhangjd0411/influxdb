@@ -19,6 +19,7 @@ import (
 	"github.com/influxdata/influxdb/pkg/estimator/hll"
 	"github.com/influxdata/influxdb/pkg/mmap"
 	"github.com/influxdata/influxdb/tsdb"
+	"go.uber.org/zap"
 )
 
 // Log errors.
@@ -38,6 +39,7 @@ const (
 type LogFile struct {
 	mu     sync.RWMutex
 	wg     sync.WaitGroup // ref count
+	wwg    sync.WaitGroup // pending write ref count
 	id     int            // file sequence identifier
 	data   []byte         // mmap
 	file   *os.File       // writer
@@ -60,6 +62,8 @@ type LogFile struct {
 
 	// Filepath to the log file.
 	path string
+
+	logger *zap.Logger
 }
 
 // NewLogFile returns a new instance of LogFile.
@@ -75,6 +79,8 @@ func NewLogFile(sfile *tsdb.SeriesFile, path string) *LogFile {
 
 		seriesIDSet:          tsdb.NewSeriesIDSet(),
 		tombstoneSeriesIDSet: tsdb.NewSeriesIDSet(),
+
+		logger: zap.NewNop(),
 	}
 }
 
@@ -144,8 +150,9 @@ func (f *LogFile) open() error {
 
 // Close shuts down the file handle and mmap.
 func (f *LogFile) Close() error {
-	// Wait until the file has no more references.
+	// Wait until the file has no more references or pending writes.
 	f.wg.Wait()
+	f.wwg.Wait()
 
 	if f.w != nil {
 		f.w.Flush()
@@ -487,24 +494,31 @@ func (f *LogFile) AddSeriesList(seriesSet *tsdb.SeriesIDSet, names [][]byte, tag
 		return nil
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	// Run write in separate goroutine so the write can continue.
+	f.wwg.Add(1)
+	go func() {
+		defer f.wwg.Done()
 
-	seriesSet.Lock()
-	defer seriesSet.Unlock()
+		f.mu.Lock()
+		defer f.mu.Unlock()
 
-	for i := range entries {
-		entry := &entries[i]
-		if seriesSet.ContainsNoLock(entry.SeriesID) {
-			// We don't need to allocate anything for this series.
-			continue
+		seriesSet.Lock()
+		defer seriesSet.Unlock()
+
+		for i := range entries {
+			entry := &entries[i]
+			if seriesSet.ContainsNoLock(entry.SeriesID) {
+				// We don't need to allocate anything for this series.
+				continue
+			}
+			if err := f.appendEntry(entry); err != nil {
+				f.logger.Error("cannot append log entry", zap.Error(err))
+				return
+			}
+			f.execEntry(entry)
+			seriesSet.AddNoLock(entry.SeriesID)
 		}
-		if err := f.appendEntry(entry); err != nil {
-			return err
-		}
-		f.execEntry(entry)
-		seriesSet.AddNoLock(entry.SeriesID)
-	}
+	}()
 	return nil
 }
 
@@ -763,6 +777,9 @@ func (f *LogFile) MeasurementSeriesIDIterator(name []byte) tsdb.SeriesIDIterator
 
 // CompactTo compacts the log file and writes it to w.
 func (f *LogFile) CompactTo(w io.Writer, m, k uint64, cancel <-chan struct{}) (n int64, err error) {
+	// Ensure there are no more pending writes.
+	f.wwg.Wait()
+
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
@@ -1001,6 +1018,9 @@ func (f *LogFile) MergeSeriesSketches(sketch, tsketch estimator.Sketch) error {
 	}
 	return tsketch.Merge(f.sTSketch)
 }
+
+// WaitPendingWrites returns after all pending writes have completed.
+func (f *LogFile) WaitPendingWrites() { f.wwg.Wait() }
 
 // LogEntry represents a single log entry in the write-ahead log.
 type LogEntry struct {

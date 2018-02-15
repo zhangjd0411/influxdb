@@ -219,6 +219,7 @@ func (i *Partition) Open() error {
 // openLogFile opens a log file and appends it to the index.
 func (i *Partition) openLogFile(path string) (*LogFile, error) {
 	f := NewLogFile(i.sfile, path)
+	f.logger = i.logger
 	if err := f.Open(); err != nil {
 		return nil, err
 	}
