@@ -225,6 +225,11 @@
   # the request log to stderr.
   # access-log-path = ""
 
+  # Determines which requests should be logged. If this is set to "error", only 5xx responses will be
+  # logged to the access log or stderr if the access-log-path is empty. If set to "info", it will print
+  # everything.
+  # access-log-level = "info"
+
   # Determines whether detailed write logging is enabled.
   # write-tracing = false
 

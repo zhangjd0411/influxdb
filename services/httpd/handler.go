@@ -37,6 +37,7 @@ import (
 	"github.com/influxdata/influxql"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -108,11 +109,12 @@ type Handler struct {
 		WritePoints(database, retentionPolicy string, consistencyLevel models.ConsistencyLevel, user meta.User, points []models.Point) error
 	}
 
-	Config    *Config
-	Logger    *zap.Logger
-	CLFLogger *log.Logger
-	accessLog *os.File
-	stats     *Statistics
+	Config         *Config
+	Logger         *zap.Logger
+	CLFLogger      *log.Logger
+	accessLog      *os.File
+	accessLogLevel zapcore.Level
+	stats          *Statistics
 
 	requestTracker *RequestTracker
 }
@@ -1530,7 +1532,14 @@ func (h *Handler) logging(inner http.Handler, name string) http.Handler {
 		start := time.Now()
 		l := &responseLogger{w: w}
 		inner.ServeHTTP(l, r)
-		h.CLFLogger.Println(buildLogLine(l, r, start))
+
+		level := zapcore.InfoLevel
+		if l.Status()/100 == 5 {
+			level = zapcore.ErrorLevel
+		}
+		if h.Config.AccessLogLevel.Enabled(level) {
+			h.CLFLogger.Println(buildLogLine(l, r, start))
+		}
 
 		// Log server errors.
 		if l.Status()/100 == 5 {
